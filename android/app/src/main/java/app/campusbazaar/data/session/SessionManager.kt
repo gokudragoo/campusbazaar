@@ -7,6 +7,8 @@ import app.campusbazaar.data.api.SessionResponse
 import app.campusbazaar.data.api.UserDto
 import app.campusbazaar.data.api.apiCall
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,13 +51,18 @@ class SessionManager(
     suspend fun restore() {
         val session = store.load()
         apply(session)
-        if (session != null) {
-            startChat(session)
-            // Refresh profile/campus in the background; a 401 here signs the user out.
-            scope.launch {
-                apiCall { api().me() }.onSuccess { me -> update { it.copy(user = me.user, campus = me.campus) } }
-            }
+        if (session == null) return
+        // Refresh profile/campus in the background; a 401 here signs the user out.
+        scope.launch {
+            apiCall { api().me() }.onSuccess { me -> update { it.copy(user = me.user, campus = me.campus) } }
         }
+        // Tokens only work with the App Key that issued them. If the server has moved to a new key,
+        // get a matching token before connecting instead of reconnecting to the old Nexconn app.
+        val serverKey = apiCall { api().freshConfig() }.getOrNull()?.nexconnAppKey
+        if (serverKey != null && serverKey != session.nexconnAppKey) {
+            if (refreshNexconnToken() == null) return
+        }
+        current?.let { startChat(it) }
     }
 
     suspend fun onSignedIn(response: SessionResponse) {
@@ -82,7 +89,7 @@ class SessionManager(
     suspend fun setCampus(campus: CampusDto) = update { it.copy(campus = campus, user = it.user.copy(campusId = campus.id)) }
     suspend fun setUser(user: UserDto) = update { it.copy(user = user) }
 
-    suspend fun signOut() {
+    suspend fun signOut() = mutex.withLock {
         nexconn.disconnect()
         store.clear()
         apply(null)
@@ -106,14 +113,27 @@ class SessionManager(
         scope.launch { nexconn.connect(session.nexconnToken) { refreshNexconnToken() } }
     }
 
-    /** Asks our server for a new Nexconn token (the SDK reported the old one invalid/expired). */
+    private var refreshing: Deferred<String?>? = null
+
+    /**
+     * Asks our server for a new Nexconn token (the SDK reported the old one invalid/expired, or the
+     * App Key changed). Concurrent callers share one request. If the token comes with a different
+     * App Key, the SDK is re-initialised for it.
+     */
     suspend fun refreshNexconnToken(): String? {
-        val fresh = apiCall { api().refreshNexconnToken() }.getOrNull() ?: return null
-        update { it.copy(nexconnToken = fresh.token, nexconnUserId = fresh.userId, nexconnAppKey = fresh.appKey) }
-        return fresh.token
+        val job = synchronized(this) {
+            refreshing?.takeIf { it.isActive } ?: scope.async {
+                val fresh = apiCall { api().refreshNexconnToken() }.getOrNull() ?: return@async null
+                update { it.copy(nexconnToken = fresh.token, nexconnUserId = fresh.userId, nexconnAppKey = fresh.appKey) }
+                nexconn.ensureInitialized(fresh.appKey)
+                fresh.token
+            }.also { refreshing = it }
+        }
+        return job.await()
     }
 
     private suspend fun reconnectWithFreshToken() {
+        if (nexconn.isConnecting) return
         val token = refreshNexconnToken() ?: return
         nexconn.disconnect()
         nexconn.connect(token) { null }

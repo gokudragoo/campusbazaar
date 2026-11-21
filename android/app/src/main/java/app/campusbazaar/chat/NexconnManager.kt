@@ -92,13 +92,19 @@ class NexconnManager(private val context: Context) {
     val events: SharedFlow<ChatEvent> = _events.asSharedFlow()
 
     @Volatile private var initializedKey: String? = null
+    @Volatile private var handlersRegistered = false
     @Volatile private var connectedUserId: String? = null
     @Volatile private var connectInFlight = false
 
     val currentUserId: String? get() = connectedUserId ?: runCatching { NCEngine.getCurrentUserId() }.getOrNull()
 
+    /**
+     * Initialises the SDK for [appKey]. If the server has moved to a different App Key (tokens are
+     * only valid for the key that issued them), disconnects and re-initialises with the new one.
+     */
     fun ensureInitialized(appKey: String) {
         if (initializedKey == appKey) return
+        if (initializedKey != null) disconnect()
         NCEngine.initialize(
             InitParams(context.applicationContext, appKey).apply {
                 areaCode = AreaCode.SG
@@ -107,7 +113,10 @@ class NexconnManager(private val context: Context) {
             },
         )
         NCEngine.registerCustomMessages(ALL_CUSTOM_MESSAGES)
-        registerHandlers()
+        if (!handlersRegistered) {
+            registerHandlers()
+            handlersRegistered = true
+        }
         initializedKey = appKey
     }
 
@@ -115,7 +124,9 @@ class NexconnManager(private val context: Context) {
         NCEngine.addConnectionStatusHandler(TAG) { event ->
             _connection.value = when (event.status) {
                 ConnectionStatus.CONNECTED -> ChatConnection.Connected
-                ConnectionStatus.CONNECTING, ConnectionStatus.SUSPENDED, ConnectionStatus.TIMEOUT -> ChatConnection.Connecting
+                ConnectionStatus.CONNECTING, ConnectionStatus.SUSPENDED -> ChatConnection.Connecting
+                // The SDK has stopped reconnecting; the app reconnects when the network returns or on Retry.
+                ConnectionStatus.TIMEOUT -> ChatConnection.Failed("Chat couldn't connect")
                 ConnectionStatus.NETWORK_UNAVAILABLE -> ChatConnection.Offline
                 ConnectionStatus.KICKED_OFFLINE_BY_OTHER_CLIENT -> ChatConnection.SignedInElsewhere
                 ConnectionStatus.TOKEN_INCORRECT -> ChatConnection.Failed("Chat session expired")
@@ -123,7 +134,8 @@ class NexconnManager(private val context: Context) {
                 ConnectionStatus.SIGNED_OUT, ConnectionStatus.USER_ABANDON, ConnectionStatus.UNCONNECTED -> ChatConnection.Idle
                 else -> _connection.value
             }
-            if (event.status == ConnectionStatus.TOKEN_INCORRECT) onTokenInvalid?.invoke()
+            // connect() refreshes the token itself; only a mid-session rejection needs the session to step in.
+            if (event.status == ConnectionStatus.TOKEN_INCORRECT && !connectInFlight) onTokenInvalid?.invoke()
         }
         NCEngine.addMessageHandler(TAG, object : MessageHandler {
             override fun onMessageReceived(event: MessageReceivedEvent) {
@@ -158,6 +170,8 @@ class NexconnManager(private val context: Context) {
     /** Called when Nexconn reports the token is no longer valid mid-session (SessionManager refreshes it). */
     @Volatile var onTokenInvalid: (() -> Unit)? = null
 
+    val isConnecting: Boolean get() = connectInFlight
+
     /**
      * Connects once per app lifecycle. If Nexconn rejects the token (invalid or expired), asks
      * [refreshToken] for a new one from our server and retries once.
@@ -185,8 +199,9 @@ class NexconnManager(private val context: Context) {
         }
     }
 
+    // timeout = 0 keeps the SDK's own reconnect strategy; a positive timeout makes it give up for good.
     private suspend fun connectOnce(token: String): Result<String> = suspendCancellableCoroutine { cont ->
-        NCEngine.connect(ConnectParams(token).apply { timeout = 20 }, object : ConnectHandler {
+        NCEngine.connect(ConnectParams(token).apply { timeout = 0 }, object : ConnectHandler {
             override fun onResult(userId: String?, error: NCError?) {
                 if (!cont.isActive) return
                 if (error == null && userId != null) cont.resume(Result.success(userId))

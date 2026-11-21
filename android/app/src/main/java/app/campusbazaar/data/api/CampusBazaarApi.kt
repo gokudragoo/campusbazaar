@@ -5,6 +5,8 @@ import okhttp3.RequestBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.HTTP
+import retrofit2.http.Headers
 import retrofit2.http.Multipart
 import retrofit2.http.PATCH
 import retrofit2.http.POST
@@ -15,6 +17,8 @@ import retrofit2.http.Query
 /** Retrofit description of the CampusBazaar backend (server/src/app/api). */
 interface CampusBazaarApi {
     @GET("api/config") suspend fun config(): ConfigResponse
+    /** Bypasses the HTTP cache: used to check the current Nexconn App Key before connecting. */
+    @Headers("Cache-Control: no-cache") @GET("api/config") suspend fun freshConfig(): ConfigResponse
 
     @POST("api/auth/signup") suspend fun signup(@Body body: SignupRequest): SessionResponse
     @POST("api/auth/login") suspend fun login(@Body body: LoginRequest): SessionResponse
@@ -22,6 +26,7 @@ interface CampusBazaarApi {
     @GET("api/me") suspend fun me(): MeResponse
     @PATCH("api/me") suspend fun updateMe(@Body body: ProfileUpdateRequest): UserResponse
     @POST("api/me/nexconn-token") suspend fun refreshNexconnToken(): NexconnTokenResponse
+    @HTTP(method = "DELETE", path = "api/me", hasBody = true) suspend fun deleteAccount(@Body body: DeleteAccountRequest): DeletedResponse
     @GET("api/me/listings") suspend fun myListings(): ListingsResponse
     @GET("api/me/saved") suspend fun saved(): ListingsResponse
 

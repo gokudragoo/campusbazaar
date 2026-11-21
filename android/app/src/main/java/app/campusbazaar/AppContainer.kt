@@ -4,6 +4,7 @@ import ai.nexconn.chat.channel.ChannelType
 import android.content.Context
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
+import app.campusbazaar.chat.ChatConnection
 import app.campusbazaar.chat.ChatEvent
 import app.campusbazaar.chat.ChatMapper
 import app.campusbazaar.chat.NexconnManager
@@ -25,6 +26,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 /** A banner shown at the top of the app for messages that arrive outside the open chat. */
@@ -62,6 +64,12 @@ class AppContainer(private val context: Context) {
         appScope.launch { session.restore() }
         appScope.launch { market.config().onSuccess { noticeSenderId = it.noticeSenderId } }
         appScope.launch { nexconn.events.collect { if (it is ChatEvent.Received && !it.offline) onIncoming(it) } }
+        // If chat gave up (for example the app started with no signal), reconnect once the network is back.
+        appScope.launch {
+            network.isOnline.distinctUntilChanged().collect { online ->
+                if (online && nexconn.connection.value is ChatConnection.Failed) session.reconnectChat()
+            }
+        }
     }
 
     /** In-app real-time notifications: banner in the foreground, system notification in the background. */

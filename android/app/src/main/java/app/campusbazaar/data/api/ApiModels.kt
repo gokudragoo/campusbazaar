@@ -64,6 +64,8 @@ data class ProfileUpdateRequest(
 
 @Serializable data class UserResponse(val user: UserDto)
 @Serializable data class NexconnTokenResponse(val appKey: String, val userId: String, val token: String)
+@Serializable data class DeleteAccountRequest(val password: String)
+@Serializable data class DeletedResponse(val deleted: Boolean)
 
 @Serializable data class CampusListResponse(val campuses: List<CampusDto>)
 @Serializable data class CampusCreateRequest(val name: String, val city: String)

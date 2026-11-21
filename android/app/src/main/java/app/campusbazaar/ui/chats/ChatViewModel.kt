@@ -280,9 +280,22 @@ class ChatViewModel(
         _state.update { it.copy(items = items) }
     }
 
+    private var onScreen = false
+    private val acked = HashSet<String>()
+
+    /** Set by the screen on resume and pause: messages count as read only while the chat is visible. */
+    fun setOnScreen(visible: Boolean) {
+        onScreen = visible
+        if (visible) markRead()
+    }
+
     private fun markRead() {
+        if (!onScreen) return
         c.nexconn.clearUnread(channel)
-        val toAck = messages.values.filter { it.direction == MessageDirection.RECEIVE && it.needReceipt && !it.sentReceipt }.mapNotNull { it.messageId }
+        val toAck = messages.values
+            .filter { it.direction == MessageDirection.RECEIVE && it.needReceipt && !it.sentReceipt }
+            .mapNotNull { it.messageId }
+            .filter { acked.add(it) }
         c.nexconn.sendReadReceipts(channel, toAck)
     }
 
@@ -335,10 +348,20 @@ class ChatViewModel(
         publish()
         channel.deleteMessagesForMe(listOf(m)) { }
         val content = m.content ?: return
-        if (content is ImageMessage) {
-            content.localPath?.let { path -> sendImageFile(Uri.parse(path)) }
-        } else {
-            send(content, ChatMapper.preview(m, me))
+        val preview = ChatMapper.preview(m, me)
+        // Offer and meetup cards need their initial metadata (it enables live updates on the message)
+        // and need to be linked to the server's deal record again.
+        when (content) {
+            is ImageMessage -> content.localPath?.let { path -> sendImageFile(Uri.parse(path)) }
+            is OfferCardMessage -> send(content, preview, metadata = mapOf(OfferCardMessage.META_STATE to DealRules.PENDING)) { sent ->
+                sent.messageId?.let { c.deals.attachOfferMessage(content.offerId, it) }
+                refreshDeal()
+            }
+            is MeetupCardMessage -> send(content, preview, metadata = mapOf(OfferCardMessage.META_STATE to "proposed")) { sent ->
+                sent.messageId?.let { c.deals.attachMeetupMessage(content.meetupId, it) }
+                refreshDeal()
+            }
+            else -> send(content, preview)
         }
     }
 
@@ -583,7 +606,7 @@ class ChatViewModel(
 
     fun block() = busy {
         val internal = _state.value.peerInternalId ?: return@busy
-        c.nexconn.block(peerId).onFailure { _toasts.tryEmit(it.message ?: "Couldn't block in chat") }
+        c.nexconn.block(peerId) // best effort: the server also adds them to the Nexconn blocklist
         c.market.block(internal).onSuccess {
             _state.update { it.copy(blockedByMe = true) }
             _toasts.tryEmit("${_state.value.peerName} is blocked")
