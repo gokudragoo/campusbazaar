@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { campusKey, normalizeCampusPart, SUBCHANNELS, tidyCampusName } from "@/lib/campus";
-import { nexconnId, randomId } from "@/lib/ids";
+import { campusChannelId, nexconnId, randomId } from "@/lib/ids";
+import { isOwnUpload } from "@/lib/uploads";
 import { rupees } from "@/lib/deals";
 import { listingCreateSchema, listingQuerySchema, meetupCreateSchema, reportCreateSchema, signupSchema } from "@/lib/validation";
 
@@ -86,5 +87,32 @@ describe("money", () => {
   it("formats rupees with Indian digit grouping", () => {
     expect(rupees(1250)).toBe("₹1,250");
     expect(rupees(125000)).toBe("₹1,25,000");
+  });
+});
+
+describe("campus channel ids", () => {
+  it("are stable per campus, distinct across campuses, and valid Nexconn ids", () => {
+    process.env.NEXCONN_APP_SECRET = "test-secret";
+    const delhi = campusChannelId(campusKey("IIT Delhi", "New Delhi"));
+    expect(campusChannelId(campusKey("I.I.T. Delhi", "new delhi"))).toBe(delhi);
+    expect(campusChannelId(campusKey("IIT Bombay", "Mumbai"))).not.toBe(delhi);
+    expect(delhi).toMatch(/^cbzcamp[a-f0-9]{24}$/);
+  });
+});
+
+describe("uploads", () => {
+  const own = "https://abc.public.blob.vercel-storage.com/cbz/listings/u123/photo.jpg";
+
+  it("accepts the student's own uploads only", () => {
+    expect(isOwnUpload(own, "u123")).toBe(true);
+    expect(isOwnUpload(own, "u999")).toBe(false);
+    expect(isOwnUpload(own, "u123", "avatars")).toBe(false);
+  });
+
+  it("rejects other hosts and non-https schemes", () => {
+    expect(isOwnUpload("https://evil.example/cbz/listings/u123/x.jpg", "u123")).toBe(false);
+    expect(isOwnUpload("http://abc.public.blob.vercel-storage.com/cbz/listings/u123/x.jpg", "u123")).toBe(false);
+    expect(isOwnUpload("javascript:alert(1)", "u123")).toBe(false);
+    expect(isOwnUpload("file:///sdcard/x.jpg", "u123")).toBe(false);
   });
 });
