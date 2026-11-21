@@ -36,10 +36,11 @@ async function dismissCommunity(env, channelId) {
   return res.ok;
 }
 
-export async function cleanup() {
+/** Also removes `extraIds`: test accounts deleted during a run no longer carry a test email. */
+export async function cleanup(extraIds = []) {
   const env = loadEnv();
   const sql = neon(env.DATABASE_URL_UNPOOLED ?? env.DATABASE_URL);
-  const users = await sql`select id from users where email like '%@campusbazaar.test'`;
+  const users = await sql`select id from users where email like '%@campusbazaar.test' or id = any(${extraIds})`;
   const ids = users.map((u) => u.id);
   if (ids.length === 0) {
     console.log("cleanup: nothing to remove");
