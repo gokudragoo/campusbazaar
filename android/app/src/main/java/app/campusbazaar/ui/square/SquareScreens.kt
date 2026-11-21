@@ -1,6 +1,7 @@
 package app.campusbazaar.ui.square
 
 import ai.nexconn.chat.channel.BaseChannel
+import ai.nexconn.chat.channel.ChannelType
 import ai.nexconn.chat.channel.CommunityChannel
 import ai.nexconn.chat.channel.CommunitySubChannel
 import ai.nexconn.chat.channel.model.CommunitySubChannelIdentifier
@@ -62,6 +63,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavHostController
 import app.campusbazaar.AppContainer
@@ -86,16 +88,19 @@ import app.campusbazaar.ui.components.LoadingBlock
 import app.campusbazaar.ui.components.Panel
 import app.campusbazaar.ui.theme.CB
 import app.campusbazaar.util.ImageCompressor
+import kotlin.coroutines.resume
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.resume
 
 /** Campus Square: the campus's Nexconn community channel and its subchannels. */
 class SquareViewModel(private val c: AppContainer) : ViewModel() {
@@ -107,7 +112,7 @@ class SquareViewModel(private val c: AppContainer) : ViewModel() {
     init {
         load()
         viewModelScope.launch {
-            c.nexconn.events.collect { e -> if (e is ChatEvent.Received && e.message.channelIdentifier is CommunitySubChannelIdentifier) refreshUnread() }
+            c.nexconn.events.collect { e -> if (e is ChatEvent.Received && e.message.channelIdentifier?.channelType == ChannelType.COMMUNITY) refreshUnread() }
         }
         viewModelScope.launch { c.nexconn.connection.collect { if (it == ChatConnection.Connected) refreshUnread() } }
     }
@@ -207,20 +212,52 @@ class SubchannelViewModel(private val c: AppContainer, private val appContext: C
     private val me get() = c.nexconn.currentUserId
     private val myName get() = c.session.me?.name ?: "A student"
 
+    private var poller: Job? = null
+
     init {
         loadMore(initial = true)
         viewModelScope.launch {
             c.nexconn.events.collect { e ->
-                if (e is ChatEvent.Received && isHere(e.message)) {
-                    put(e.message)
+                when {
+                    e is ChatEvent.Received && isHere(e.message) -> {
+                        put(e.message)
+                        publish()
+                        c.nexconn.clearUnread(channel)
+                    }
+                    // The SDK only attaches the subchannel when the message carries one; otherwise it
+                    // reports just the community, so fetch the newest page to see whether it was ours.
+                    e is ChatEvent.Received && isThisCommunity(e.message) -> refreshLatest()
+                    e is ChatEvent.UnreadChanged && e.channel?.channelId == identifier.channelId -> refreshLatest()
+                }
+            }
+        }
+    }
+
+    /** While the subchannel is on screen, also check for new messages every few seconds. */
+    fun setOnScreen(visible: Boolean) {
+        poller?.cancel()
+        poller = if (visible) viewModelScope.launch { while (isActive) { delay(4000); refreshLatest() } } else null
+    }
+
+    private fun isHere(m: Message): Boolean = (m.channelIdentifier as? CommunitySubChannelIdentifier)?.let { it.channelId == identifier.channelId && it.subChannelId == subchannelId } == true
+
+    private fun isThisCommunity(m: Message): Boolean =
+        m.channelIdentifier?.let { it.channelType == ChannelType.COMMUNITY && it.channelId == identifier.channelId } == true
+
+    /** Merges the newest page of history (picks up messages the live event didn't attribute to us). */
+    private fun refreshLatest() {
+        viewModelScope.launch {
+            val latest = BaseChannel.createMessagesQuery(MessagesQueryParams(identifier).apply { pageSize = 20; isAscending = false })
+            c.nexconn.loadNextPage(latest).onSuccess { page ->
+                val before = messages.keys.toSet()
+                page.forEach(::put)
+                if (messages.keys != before) {
                     publish()
                     c.nexconn.clearUnread(channel)
                 }
             }
         }
     }
-
-    private fun isHere(m: Message): Boolean = (m.channelIdentifier as? CommunitySubChannelIdentifier)?.let { it.channelId == identifier.channelId && it.subChannelId == subchannelId } == true
 
     private fun key(m: Message) = m.messageId?.takeIf { it.isNotBlank() } ?: "local-${m.clientId}"
 
@@ -296,6 +333,10 @@ fun SubchannelScreen(channelId: String, subchannelId: String, name: String, nav:
     LaunchedEffect(nearTop, state.items.size) { if (nearTop && state.items.isNotEmpty()) vm.loadMore() }
     LaunchedEffect(state.items.lastOrNull()?.key) { if (listState.firstVisibleItemIndex <= 2) listState.animateScrollToItem(0) }
     LaunchedEffect(Unit) { vm.toasts.collect { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() } }
+    LifecycleResumeEffect(vm) {
+        vm.setOnScreen(true)
+        onPauseOrDispose { vm.setOnScreen(false) }
+    }
 
     Column(Modifier.fillMaxSize().background(CB.Paper).imePadding()) {
         Row(Modifier.fillMaxWidth().background(CB.Surface).statusBarsPadding().padding(horizontal = 4.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {

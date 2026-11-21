@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://campusbazaar-api.vercel.app">Website</a> ·
-  <a href="https://campusbazaar-api.vercel.app/download">Download for Android (v1.1.0)</a> ·
+  <a href="https://campusbazaar-api.vercel.app/download">Download for Android (v1.1.1)</a> ·
   <a href="https://campusbazaar-api.vercel.app/safety">Safe meetup guide</a>
 </p>
 
@@ -24,7 +24,7 @@ on Vercel with Neon Postgres, Vercel Blob and Gemini vision.
 
 ![CampusBazaar website](docs/screenshots/00-website.png)
 
-- **Android app:** [signed APK v1.1.0](https://campusbazaar-api.vercel.app/download/apk) (Android 8.0+),
+- **Android app:** [signed APK v1.1.1](https://campusbazaar-api.vercel.app/download/apk) (Android 8.0+),
   install steps on the [download page](https://campusbazaar-api.vercel.app/download)
 - **Website and API (Vercel production):** https://campusbazaar-api.vercel.app
 
@@ -132,6 +132,9 @@ the session response and `GET /api/config`.
 - The Android SDK rejects client-side location messages on this App Key with the undocumented error
   31610; the app sends the same `RC:LBSMsg` through the Platform API instead.
 - Typing status only works in direct channels.
+- A received community-channel message carries a `CommunitySubChannelIdentifier` only when its
+  subchannel id is set; otherwise the SDK reports just the community. An open Campus Square
+  subchannel refreshes its newest page in that case, and checks every few seconds while on screen.
 
 ## The website
 
@@ -168,7 +171,8 @@ icon; the Android launcher and in-app mark use the same geometry.
   app and on the web, which anonymises the account while keeping counterparties' deal history.
 - **Tests:** 17 server unit tests, 17 Android unit tests, and a 56-check end-to-end suite that runs
   against production (Neon, Nexconn, Blob and a real Gemini vision draft) and cleans up after itself.
-  Each release is also driven on an emulator against production with a second, API-driven student.
+  Each release is also driven end to end on two emulators side by side against production (seller
+  and buyer), which is how the demo video was recorded.
 
 ## Tech stack
 
@@ -254,4 +258,3 @@ in Campus Square). It needs `server/.env.local` (the Nexconn secret never leaves
   students negotiate several items, the chat header lets you switch the active item.
 - Android only; there is no iOS app yet. The APK is distributed directly rather than through the Play
   Store.
-- Typing indicators were not observed end to end (one emulator plus a server-driven second student).

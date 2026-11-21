@@ -180,8 +180,8 @@ metadata, access-token expiry on account deletion.
 - Server e2e against production: `node scripts/e2e.mjs https://campusbazaar-api.vercel.app <photo>`
   (56 checks incl. a real Gemini vision draft and account deletion; cleans up its test data).
 - Android unit tests: `cd android && ./gradlew testDebugUnitTest` (17 JVM tests).
-- Emulator run (release APK, production): seller on device, buyer via `second-student.mjs`, then a
-  second login as the buyer on the device. Screenshots in docs/screenshots.
+- Emulator run (release APK, production): two emulators side by side (seller and buyer), plus
+  `second-student.mjs` for extra students. Screenshots in docs/screenshots.
 
 ## Known limitations
 
@@ -193,4 +193,6 @@ metadata, access-token expiry on account deletion.
   to `POST /api/chats/location`, which sends the same RC:LBSMsg via the Platform Chat API.
 - SDK gotcha: `CommunitySubChannel(subChannelId, channelId)` takes the subchannel id first, unlike
   `CommunitySubChannelIdentifier(channelId, subChannelId)`.
-- Typing indicators were not observed end to end (single emulator + server-driven second user).
+- Received community messages carry a `CommunitySubChannelIdentifier` only when the subchannel id is
+  set; otherwise just the community. `SubchannelViewModel` refreshes the newest page in that case and
+  polls every 4 s while on screen.

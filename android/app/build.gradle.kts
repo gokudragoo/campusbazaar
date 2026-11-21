@@ -23,8 +23,8 @@ android {
         applicationId = "app.campusbazaar"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.1.1"
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         ndk {
             // Real phones are arm64; x86_64 keeps the emulator working. Drops 32-bit Nexconn natives.
