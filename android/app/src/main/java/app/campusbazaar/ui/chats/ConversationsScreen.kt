@@ -48,10 +48,12 @@ import app.campusbazaar.ui.components.Hairline
 import app.campusbazaar.ui.components.LoadingBlock
 import app.campusbazaar.ui.components.QuietButton
 import app.campusbazaar.ui.theme.CB
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -66,6 +68,7 @@ data class ConversationRow(
 )
 
 /** Nexconn conversation list (direct channels) enriched with names and the item being discussed. */
+@OptIn(FlowPreview::class)
 class ConversationsViewModel(private val c: AppContainer) : ViewModel() {
     data class State(val rows: List<ConversationRow> = emptyList(), val loading: Boolean = true, val refreshing: Boolean = false, val error: String? = null)
 
@@ -77,12 +80,10 @@ class ConversationsViewModel(private val c: AppContainer) : ViewModel() {
     init {
         viewModelScope.launch { c.nexconn.connection.collect { if (it == ChatConnection.Connected) load() } }
         viewModelScope.launch {
-            c.nexconn.events.collect { e ->
-                if (e is ChatEvent.Received || e is ChatEvent.UnreadChanged) {
-                    delay(200)
-                    load(silent = true)
-                }
-            }
+            c.nexconn.events
+                .filter { it is ChatEvent.Received || it is ChatEvent.UnreadChanged }
+                .debounce(200)
+                .collect { load(silent = true) }
         }
         load()
     }

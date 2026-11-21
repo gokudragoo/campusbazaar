@@ -45,6 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -104,6 +105,11 @@ fun ChatScreen(peerId: String, initialName: String, listingId: String?, openOffe
     DisposableEffect(peerId) {
         container.openChatPeer = peerId
         onDispose { if (container.openChatPeer == peerId) container.openChatPeer = null }
+    }
+    // Read receipts and unread clearing only while this chat is actually on screen.
+    LifecycleResumeEffect(vm) {
+        vm.setOnScreen(true)
+        onPauseOrDispose { vm.setOnScreen(false) }
     }
     LaunchedEffect(Unit) { vm.toasts.collect { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() } }
 

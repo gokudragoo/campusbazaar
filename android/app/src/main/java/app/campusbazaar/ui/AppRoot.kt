@@ -83,10 +83,13 @@ import app.campusbazaar.ui.square.SubchannelScreen
 import app.campusbazaar.ui.theme.CB
 import app.campusbazaar.ui.wanted.WantedCreateScreen
 import app.campusbazaar.ui.wanted.WantedScreen
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 
 @Composable
@@ -111,6 +114,7 @@ private fun AuthFlow() {
 }
 
 /** Unread counts for the Chats tab (direct channels) and the Activity bell (system channel). */
+@OptIn(FlowPreview::class)
 class BadgesViewModel(private val c: AppContainer) : ViewModel() {
     private val _chats = MutableStateFlow(0)
     val chats: StateFlow<Int> = _chats.asStateFlow()
@@ -119,13 +123,12 @@ class BadgesViewModel(private val c: AppContainer) : ViewModel() {
 
     init {
         viewModelScope.launch { c.nexconn.connection.collect { refresh() } }
+        // Debounced, never suspending inside collect: a slow collector would back up the shared event flow.
         viewModelScope.launch {
-            c.nexconn.events.collect { e ->
-                if (e is ChatEvent.Received || e is ChatEvent.UnreadChanged) {
-                    delay(250)
-                    refresh()
-                }
-            }
+            c.nexconn.events
+                .filter { it is ChatEvent.Received || it is ChatEvent.UnreadChanged }
+                .debounce(250)
+                .collect { refresh() }
         }
     }
 
@@ -181,7 +184,14 @@ private fun MainFlow(container: AppContainer, pendingPeer: String?, pendingActiv
             composable<ActivityRoute> { ActivityScreen(nav) }
             composable<SafetyRoute> { SafetyScreen(nav) }
             composable<WantedCreateRoute> { WantedCreateScreen(nav) }
-            composable<CampusPickerRoute> { CampusPickerScreen(switching = true, onDone = { nav.popBackStack() }, onBack = { nav.popBackStack() }) }
+            composable<CampusPickerRoute> {
+                CampusPickerScreen(
+                    switching = true,
+                    // Recreate Home so Browse, Wanted and Square load the new campus.
+                    onDone = { nav.navigate(HomeRoute) { popUpTo(HomeRoute) { inclusive = true } } },
+                    onBack = { nav.popBackStack() },
+                )
+            }
         }
         AnimatedVisibility(
             visible = banner != null,
