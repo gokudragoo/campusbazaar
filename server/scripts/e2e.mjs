@@ -138,6 +138,12 @@ async function main() {
     },
   });
   check(listing.status === "active" && listing.aiAssisted, "listing published from the AI draft");
+  const foreign = await api("POST", "/api/listings", {
+    token: a.token,
+    body: { title: "Tracking pixel", category: "other", condition: "good", price: 10, photos: ["https://example.com/x.jpg"] },
+    expect: [400],
+  });
+  check(foreign.error.code === "invalid_photo", "listing photos must be the seller's own uploads");
 
   console.log("6. Browse and find");
   const feed = await api("GET", "/api/listings", { token: b.token });
@@ -197,6 +203,8 @@ async function main() {
   check(profileA.user.ratingAvg === 5 && profileA.user.soldCount === 1, "A's profile shows 5.0 rating and 1 sold");
   const feedAfter = await api("GET", "/api/listings", { token: b.token });
   check(!feedAfter.listings.some((l) => l.id === listing.id), "sold item leaves the feed");
+  const keepSold = await api("DELETE", `/api/listings/${listing.id}`, { token: a.token, expect: [409] });
+  check(keepSold.error.code === "sold", "sold listing stays as the record behind ratings");
 
   console.log("9. Wanted posts");
   const { wanted } = await api("POST", "/api/wanted", { token: b.token, body: { title: "Engineering Graphics drafter", category: "notes_stationery", budget: 400 } });
@@ -212,6 +220,12 @@ async function main() {
     token: a.token,
     body: { title: "Desk lamp", category: "hostel_room", condition: "good", price: 250, photos: [upload.url] },
   });
+  const { listing: l3 } = await api("POST", "/api/listings", {
+    token: a.token,
+    body: { title: "Study lamp", category: "hostel_room", condition: "good", price: 300, photos: [upload.url] },
+  });
+  const o3 = await api("POST", "/api/offers", { token: b.token, body: { listingId: l3.id, amount: 200 } });
+  const c3 = await api("POST", `/api/offers/${o3.offer.id}/counter`, { token: a.token, body: { amount: 260 } });
   await api("POST", `/api/listings/${l2.id}/hide`, { token: b.token });
   const hiddenFeed = await api("GET", "/api/listings", { token: b.token });
   check(!hiddenFeed.listings.some((l) => l.id === l2.id), "hidden listing disappears for B");
@@ -221,6 +235,9 @@ async function main() {
   check(true, "blocked seller's listing is hidden from B");
   const blockedChat = await api("POST", "/api/chats/start", { token: a.token, body: { listingId: l2.id }, expect: [400, 403] });
   check(Boolean(blockedChat.error), "blocked users can't start chats");
+  await api("POST", `/api/offers/${c3.offer.id}/accept`, { token: b.token, expect: [403] });
+  const mineA = await api("GET", "/api/me/listings", { token: a.token });
+  check(mineA.listings.find((l) => l.id === l3.id)?.status === "active", "blocked students can't accept offers or reserve items");
   await api("DELETE", `/api/blocks/${a.user.id}`, { token: b.token });
   await api("DELETE", `/api/listings/${l2.id}`, { token: a.token });
   check(true, "unblock + delete work");
@@ -229,15 +246,36 @@ async function main() {
   const refreshed = await api("POST", "/api/me/nexconn-token", { token: b.token });
   check(refreshed.userId === b.nexconn.userId && refreshed.token.length > 20, "Nexconn token re-issued");
 
+  console.log("12. Account deletion");
+  const wrongPw = await api("DELETE", "/api/me", { token: b.token, body: { password: "not-the-password" }, expect: [401] });
+  check(wrongPw.error.code === "invalid_password", "deletion needs the right password");
+  await api("DELETE", "/api/me", { token: b.token, body: { password: "campus-pass-2" } });
+  await api("GET", "/api/me", { token: b.token, expect: [401] });
+  await api("POST", "/api/auth/login", { body: { email: email("b"), password: "campus-pass-2" }, expect: [401] });
+  check(true, "deleted account is signed out everywhere and can't sign in");
+  const ghost = await api("GET", `/api/users/${b.user.id}`, { token: a.token });
+  const threadsAfter = await api("GET", "/api/chats/threads", { token: a.token });
+  check(
+    ghost.user.name === "Deleted student" && threadsAfter.threads.some((t) => t.id === chat.threadId),
+    "seller keeps the deal history with an anonymised buyer",
+  );
+  const boardAfter = await api("GET", "/api/wanted", { token: a.token });
+  check(!boardAfter.wanted.some((w) => w.id === wanted.id), "deleted student's wanted posts come down");
+  const c = await api("POST", "/api/auth/signup", { body: { name: "E2E Web Delete", email: email("c"), password: "campus-pass-3" } });
+  await api("POST", "/api/auth/delete-account", { body: { email: email("c"), password: "not-the-password" }, expect: [401] });
+  await api("POST", "/api/auth/delete-account", { body: { email: email("c"), password: "campus-pass-3" } });
+  await api("POST", "/api/auth/login", { body: { email: email("c"), password: "campus-pass-3" }, expect: [401] });
+  check(true, "account deletion from the website works");
+
   console.log(`\nPASSED ${passed} checks`);
-  return { users: [a.user.id, b.user.id], campusId: created.campus.id };
+  return { users: [a.user.id, b.user.id, c.user.id], campusId: created.campus.id };
 }
 
 main()
   .then(async (ids) => {
     if (!KEEP) {
       const { cleanup } = await import("./cleanup-e2e.mjs");
-      await cleanup();
+      await cleanup(ids.users);
     } else {
       console.log("Kept test data:", ids);
     }
