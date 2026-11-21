@@ -41,7 +41,7 @@ export const PATCH = route(async (req) => {
 /** Deletes the signed-in student's account after they re-enter their password. */
 export const DELETE = route(async (req) => {
   const user = await requireUser(req);
-  await rateLimit(, 10, 900, "Too many attempts. Wait 15 minutes and try again.");
+  await rateLimit(`delete-account:${user.id}`, 10, 900, "Too many attempts. Wait 15 minutes and try again.");
   const { password } = await parseBody(req, deleteAccountSchema);
   if (!(await verifyPassword(password, user.passwordHash))) {
     throw new ApiError(401, "invalid_password", "That password is incorrect.");
