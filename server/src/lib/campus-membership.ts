@@ -1,7 +1,26 @@
 import { eq, sql } from "drizzle-orm";
+import { SUBCHANNELS } from "./campus";
 import { db, schema } from "./db";
 import type { Campus, User } from "./db/schema";
-import { joinCommunityChannel, leaveCommunityChannel } from "./nexconn";
+import { createCommunityChannel, createSubchannel, joinCommunityChannel, leaveCommunityChannel, listSubchannels } from "./nexconn";
+
+/**
+ * Makes sure the campus's Nexconn community channel and every standard subchannel exist in the
+ * current Nexconn app. Safe to repeat: create calls are idempotent on the Platform Chat API.
+ *
+ * The Platform API reports success when joining a channel that was never created (for example
+ * after switching to a new App Key), so membership checks can't detect a missing channel. A
+ * channel with none of its subchannels is treated as unprovisioned and created first.
+ */
+export async function ensureCampusCommunity(campus: Campus, ownerUserId: string): Promise<void> {
+  const existing = await listSubchannels(campus.communityChannelId);
+  const missing = SUBCHANNELS.filter((s) => !existing.includes(s.id));
+  if (missing.length === 0) return;
+  if (existing.length === 0) {
+    await createCommunityChannel(campus.communityChannelId, `${campus.name}, ${campus.city}`, ownerUserId);
+  }
+  for (const sub of missing) await createSubchannel(campus.communityChannelId, sub.id);
+}
 
 /**
  * Moves a user into a campus: joins the campus's Nexconn community channel (Campus Square),
@@ -9,7 +28,10 @@ import { joinCommunityChannel, leaveCommunityChannel } from "./nexconn";
  */
 export async function moveUserToCampus(user: User, campus: Campus, opts: { alreadyMember?: boolean } = {}): Promise<Campus> {
   if (user.campusId === campus.id) return campus;
-  if (!opts.alreadyMember) await joinCommunityChannel(user.nexconnUserId, campus.communityChannelId);
+  if (!opts.alreadyMember) {
+    await ensureCampusCommunity(campus, user.nexconnUserId);
+    await joinCommunityChannel(user.nexconnUserId, campus.communityChannelId);
+  }
 
   const previousId = user.campusId;
   await db().batch([
