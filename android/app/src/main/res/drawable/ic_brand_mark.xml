@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The CampusBazaar mark for light backgrounds (ink string). Geometry from server/scripts/build-brand.mjs. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="29dp"
+    android:viewportWidth="48"
+    android:viewportHeight="58">
+    <group
+        android:translateX="-8"
+        android:translateY="-4">
+        <group
+            android:pivotX="32"
+            android:pivotY="36"
+            android:rotation="-10">
+            <group
+                android:scaleX="0.8"
+                android:scaleY="0.8"
+                android:translateX="6.4"
+                android:translateY="9">
+                <path
+                    android:fillColor="#F5B800"
+                    android:fillType="evenOdd"
+                    android:pathData="M32,5.5 Q33.6,5.5 34.9,6.5 L51,19.2 Q53,20.8 53,23.4 L53,54 Q53,59 48,59 L16,59 Q11,59 11,54 L11,23.4 Q11,20.8 13,19.2 L29.1,6.5 Q30.4,5.5 32,5.5 Z M32,18 a4.6,4.6 0 1,0 0.001,0 Z M17,29 h30 v3 h-30 Z M20.6,36 h3.4 v15 h-3.4 Z M30.3,36 h3.4 v15 h-3.4 Z M40,36 h3.4 v15 h-3.4 Z" />
+                <path
+                    android:pathData="M32,22.6 C30.5,12 37,3.5 47,0"
+                    android:strokeWidth="2.4"
+                    android:strokeColor="#16213E"
+                    android:strokeLineCap="round" />
+            </group>
+        </group>
+    </group>
+</vector>

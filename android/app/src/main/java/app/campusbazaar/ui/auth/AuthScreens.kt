@@ -1,5 +1,6 @@
 package app.campusbazaar.ui.auth
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,18 +28,29 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.campusbazaar.BuildConfig
+import app.campusbazaar.R
 import app.campusbazaar.data.repo.AuthRepository
 import app.campusbazaar.domain.InputRules
 import app.campusbazaar.ui.appViewModel
@@ -53,38 +65,57 @@ import app.campusbazaar.ui.theme.CB
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.collectAsState
 
 @Composable
 fun WelcomeScreen(onSignUp: () -> Unit, onSignIn: () -> Unit) {
     Column(
         Modifier.fillMaxSize().background(CB.Paper).statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp),
     ) {
-        Spacer(Modifier.height(56.dp))
-        Text("CampusBazaar", style = MaterialTheme.typography.titleMedium, color = CB.InkSoft)
         Spacer(Modifier.height(28.dp))
-        // The single bold moment: tags and stamps from a campus notice board.
-        Box(Modifier.fillMaxWidth().height(170.dp)) {
-            Column(Modifier.align(Alignment.TopStart), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                WelcomeTagRow("Casio fx-991EX", 650)
-                WelcomeTagRow("Engineering Drawing, N.D. Bhatt", 280)
-                WelcomeTagRow("Hercules cycle, 26 inch", 2400)
-            }
-            StatusStamp("SOLD", Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 4.dp), large = true)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Image(painterResource(R.drawable.ic_brand_mark), contentDescription = null, modifier = Modifier.height(30.dp))
+            Spacer(Modifier.width(10.dp))
+            Text("CampusBazaar", style = MaterialTheme.typography.titleLarge, color = CB.Ink)
         }
-        Spacer(Modifier.height(28.dp))
-        Text("Buy and sell with students on your campus", style = MaterialTheme.typography.displaySmall)
-        Spacer(Modifier.height(12.dp))
-        Text(
-            "Old books, calculators, cycles, coolers and notes. Chat, make an offer, and meet at a safe spot on campus.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = CB.InkSoft,
-        )
-        Spacer(Modifier.weight(1f))
+        // The hero sits centred in the space above the buttons instead of leaving a gap below it.
+        Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center) {
+            // The single bold moment: tags and stamps from a campus notice board.
+            Box(Modifier.fillMaxWidth().height(170.dp)) {
+                Column(Modifier.align(Alignment.TopStart), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    WelcomeTagRow("Casio fx-991EX", 650)
+                    WelcomeTagRow("Engineering Drawing, N.D. Bhatt", 280)
+                    WelcomeTagRow("Hercules cycle, 26 inch", 2400)
+                }
+                StatusStamp("SOLD", Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 4.dp), large = true)
+            }
+            Spacer(Modifier.height(28.dp))
+            Text("Buy and sell with students on your campus", style = MaterialTheme.typography.displaySmall)
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Old books, calculators, cycles, coolers and notes. Chat, make an offer, and meet at a safe spot on campus.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = CB.InkSoft,
+            )
+        }
         PrimaryButton("Create account", onSignUp, Modifier.fillMaxWidth())
         Spacer(Modifier.height(10.dp))
         SecondaryButton("I already have an account", onSignIn, Modifier.fillMaxWidth())
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(14.dp))
+        Text(
+            buildAnnotatedString {
+                val link = TextLinkStyles(SpanStyle(color = CB.Ink, textDecoration = TextDecoration.Underline))
+                append("By continuing you agree to the ")
+                withLink(LinkAnnotation.Url("${BuildConfig.API_BASE_URL}/terms", link)) { append("terms of use") }
+                append(" and ")
+                withLink(LinkAnnotation.Url("${BuildConfig.API_BASE_URL}/privacy", link)) { append("privacy policy") }
+                append(".")
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = CB.InkSoft,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(16.dp))
     }
 }
 
