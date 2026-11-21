@@ -101,7 +101,7 @@ await out(join(pub, "brand", "mark-on-dark.svg"), markOnDarkSvg());
 await out(join(pub, "brand", "app-icon.svg"), tileSvg());
 
 // Real emulator screenshots (docs/screenshots) re-encoded for the web.
-const shots = ["03-gemini-draft", "04-listing-detail", "06-offer-accepted", "07-meetup-confirmed", "08-sold-and-rated", "09-campus-square", "05-chats", "12-profile"];
+const shots = ["01-welcome", "03-gemini-draft", "04-listing-detail", "06-offer-accepted", "07-meetup-confirmed", "08-sold-and-rated", "09-campus-square", "05-chats", "12-profile"];
 for (const name of shots) {
   const data = await sharp(join(repo, "docs", "screenshots", `${name}.png`)).resize(540).webp({ quality: 82 }).toBuffer();
   await out(join(pub, "shots", `${name}.webp`), data);
