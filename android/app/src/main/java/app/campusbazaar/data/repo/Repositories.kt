@@ -27,6 +27,10 @@ class AuthRepository(private val api: CampusBazaarApi, private val session: Sess
 
     suspend fun joinCampus(id: String): Result<CampusDto> = apiCall { api.joinCampus(id).campus }.onSuccess { session.setCampus(it) }
 
+    /** Deletes the account on the server (password confirmed), then signs out on this phone. */
+    suspend fun deleteAccount(password: String): Result<Unit> =
+        apiCall { api.deleteAccount(DeleteAccountRequest(password)) }.mapCatching { session.signOut() }
+
     suspend fun me(): Result<MeResponse> = apiCall { api.me() }.onSuccess { r ->
         session.update { it.copy(user = r.user, campus = r.campus ?: it.campus) }
     }

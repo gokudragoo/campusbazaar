@@ -247,7 +247,7 @@ async function main() {
   check(refreshed.userId === b.nexconn.userId && refreshed.token.length > 20, "Nexconn token re-issued");
 
   console.log("12. Account deletion");
-  const wrongPw = await api("DELETE", "/api/me", { token: b.token, body: { password: "not-the-password" }, expect: [401] });
+  const wrongPw = await api("DELETE", "/api/me", { token: b.token, body: { password: "not-the-password" }, expect: [403] });
   check(wrongPw.error.code === "invalid_password", "deletion needs the right password");
   await api("DELETE", "/api/me", { token: b.token, body: { password: "campus-pass-2" } });
   await api("GET", "/api/me", { token: b.token, expect: [401] });

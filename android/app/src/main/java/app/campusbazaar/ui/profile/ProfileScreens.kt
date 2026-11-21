@@ -48,11 +48,15 @@ import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -139,6 +143,20 @@ class MeViewModel(private val c: AppContainer) : ViewModel() {
     init { refresh() }
     fun refresh() = viewModelScope.launch { c.auth.me().onSuccess { _stats.value = it.stats } }
     fun signOut() = viewModelScope.launch { c.session.signOut() }
+
+    private val _deleting = MutableStateFlow(false)
+    val deleting = _deleting.asStateFlow()
+    private val _deleteError = MutableStateFlow<String?>(null)
+    val deleteError = _deleteError.asStateFlow()
+
+    fun deleteAccount(password: String) = viewModelScope.launch {
+        _deleting.value = true
+        _deleteError.value = null
+        c.auth.deleteAccount(password).onFailure { _deleteError.value = it.message ?: "Couldn't delete your account. Try again." }
+        _deleting.value = false
+    }
+
+    fun clearDeleteError() { _deleteError.value = null }
 }
 
 @Composable
@@ -149,6 +167,7 @@ fun MeScreen(nav: NavHostController) {
     val session = vm.session.current
     val context = LocalContext.current
     var confirmOut by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
     var notifGranted by remember { mutableStateOf(Permissions.canNotify(context)) }
     val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { notifGranted = it }
     val user = session?.user ?: return
@@ -198,6 +217,8 @@ fun MeScreen(nav: NavHostController) {
                 MenuRow(Icons.Outlined.Block, "Blocked students") { nav.navigate(BlockedRoute) }
                 Hairline()
                 MenuRow(Icons.AutoMirrored.Outlined.Logout, "Sign out", danger = true) { confirmOut = true }
+                Hairline()
+                MenuRow(Icons.Outlined.DeleteForever, "Delete account", danger = true) { vm.clearDeleteError(); confirmDelete = true }
             }
             Text(
                 "Push notifications aren't available yet, so alerts arrive while the app is open or running in the background.",
@@ -207,6 +228,36 @@ fun MeScreen(nav: NavHostController) {
         }
     }
     if (confirmOut) ConfirmDialog("Sign out?", "You'll need your email and password to sign back in.", "Sign out", { confirmOut = false; vm.signOut() }, { confirmOut = false })
+    if (confirmDelete) DeleteAccountDialog(vm) { confirmDelete = false }
+}
+
+@Composable
+private fun DeleteAccountDialog(vm: MeViewModel, onDismiss: () -> Unit) {
+    val deleting by vm.deleting.collectAsState()
+    val error by vm.deleteError.collectAsState()
+    var password by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = { if (!deleting) onDismiss() },
+        containerColor = CB.Surface,
+        title = { Text("Delete your account?", style = MaterialTheme.typography.titleLarge) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Your profile, listings and wanted posts are removed for good, and you're signed out everywhere. Students you dealt with keep their chat history.",
+                    style = MaterialTheme.typography.bodyMedium, color = CB.InkSoft,
+                )
+                Field(
+                    password, { password = it }, "Password",
+                    keyboardType = KeyboardType.Password,
+                    visualTransformation = PasswordVisualTransformation(),
+                    error = error,
+                    enabled = !deleting,
+                )
+            }
+        },
+        confirmButton = { QuietButton(if (deleting) "Deleting…" else "Delete account", { vm.deleteAccount(password) }, enabled = password.isNotEmpty() && !deleting, danger = true) },
+        dismissButton = { QuietButton("Cancel", onDismiss, enabled = !deleting) },
+    )
 }
 
 @Composable

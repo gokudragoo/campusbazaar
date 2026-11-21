@@ -44,7 +44,8 @@ export const DELETE = route(async (req) => {
   await rateLimit(`delete-account:${user.id}`, 10, 900, "Too many attempts. Wait 15 minutes and try again.");
   const { password } = await parseBody(req, deleteAccountSchema);
   if (!(await verifyPassword(password, user.passwordHash))) {
-    throw new ApiError(401, "invalid_password", "That password is incorrect.");
+    // 403, not 401: the session is valid, and clients treat 401 as "signed out".
+    throw new ApiError(403, "invalid_password", "That password is incorrect.");
   }
   await deleteAccount(user);
   return json({ deleted: true });
