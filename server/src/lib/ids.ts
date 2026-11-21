@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { env } from "./env";
 
 const ALPHABET = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -18,6 +18,15 @@ export function randomId(length = 16): string {
 /** Nexconn user / channel ids must be letters and digits only and carry the app prefix. */
 export function nexconnId(kind: "u" | "camp" | "bot", length = 18): string {
   return `${env.nexconnPrefix()}${kind}${randomId(length)}`;
+}
+
+/**
+ * Community channel id for a campus, derived from its normalised key with an HMAC under the App
+ * Secret: unguessable, but stable, so retries and concurrent creates converge on one channel.
+ */
+export function campusChannelId(normKey: string): string {
+  const digest = createHmac("sha256", env.nexconnAppSecret()).update(`campus:${normKey}`).digest("hex");
+  return `${env.nexconnPrefix()}camp${digest.slice(0, 24)}`;
 }
 
 export function botUserId(): string {

@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, or } from "drizzle-orm";
+import { and, eq, ne, or, sql } from "drizzle-orm";
 import { db, schema } from "./db";
 import type { Listing, Offer, Thread, User } from "./db/schema";
 import { badRequest, conflict, forbidden, notFound } from "./http";
@@ -72,6 +72,11 @@ async function supersedePending(threadId: string, actorId: string, exceptId?: st
   return out;
 }
 
+/** Deal actions between two students stop working once either has blocked the other. */
+export async function assertNotBlocked(buyerId: string, sellerId: string): Promise<void> {
+  if (await isBlockedEitherWay(buyerId, sellerId)) throw forbidden("You can't make deals with this student.");
+}
+
 function assertNegotiable(listing: Listing, amount: number): void {
   if (listing.status === "sold") throw conflict("This item has already been sold.");
   if (listing.status === "removed") throw notFound("This listing is no longer available.");
@@ -88,6 +93,7 @@ export async function createOffer(listing: Listing, actor: User, amount: number,
     if (!threadIdHint) throw badRequest("Pick the buyer conversation to send an offer in.");
     thread = await getThreadForParticipant(threadIdHint, actor);
     if (thread.listingId !== listing.id) throw badRequest("That conversation is about a different item.");
+    await assertNotBlocked(thread.buyerId, thread.sellerId);
   } else {
     if (listing.status === "reserved" && listing.reservedForId !== actor.id) {
       throw conflict("This item is reserved for another buyer right now.", "reserved");
@@ -123,29 +129,42 @@ function assertRecipient(offer: Offer, user: User): void {
   if (offer.status !== "pending") throw conflict(`This offer was already ${offer.status}.`, "offer_closed");
 }
 
-/** Accepting reserves the listing for the buyer at the agreed amount. */
+/**
+ * Accepting reserves the listing for the buyer at the agreed amount. Both writes happen in one
+ * statement: the listing is reserved only while the offer is still pending and the item is free
+ * (or already reserved for this buyer), and the offer is accepted only if that reservation
+ * happened. Concurrent accepts for different buyers can't both win.
+ */
 export async function acceptOffer(offer: Offer, actor: User) {
   assertRecipient(offer, actor);
-  const [listing] = await db().select().from(schema.listings).where(eq(schema.listings.id, offer.listingId)).limit(1);
-  if (!listing || listing.status === "removed") throw notFound("This listing is no longer available.");
-  if (listing.status === "sold") throw conflict("This item has already been sold.");
-  if (listing.status === "reserved" && listing.reservedForId && listing.reservedForId !== offer.buyerId) {
+  await assertNotBlocked(offer.buyerId, offer.sellerId);
+  const result = await db().execute<{ accepted: number }>(sql`
+    with reserved as (
+      update listings set status = 'reserved', reserved_for_id = ${offer.buyerId}, updated_at = now()
+      where id = ${offer.listingId}
+        and (status = 'active' or (status = 'reserved' and (reserved_for_id is null or reserved_for_id = ${offer.buyerId})))
+        and exists (select 1 from offers where id = ${offer.id} and status = 'pending')
+      returning id
+    ), accepted as (
+      update offers set status = 'accepted', responded_at = now()
+      where id = ${offer.id} and status = 'pending' and exists (select 1 from reserved)
+      returning id
+    )
+    select count(*)::int as accepted from accepted
+  `);
+
+  const [[updatedOffer], [listing]] = await Promise.all([
+    db().select().from(schema.offers).where(eq(schema.offers.id, offer.id)).limit(1),
+    db().select().from(schema.listings).where(eq(schema.listings.id, offer.listingId)).limit(1),
+  ]);
+  if (Number(result.rows[0]?.accepted ?? 0) !== 1 || !updatedOffer || !listing) {
+    if (!listing || listing.status === "removed") throw notFound("This listing is no longer available.");
+    if (listing.status === "sold") throw conflict("This item has already been sold.");
+    if (updatedOffer && updatedOffer.status !== "pending") throw conflict("This offer was already answered.", "offer_closed");
     throw conflict("This item is already reserved for another buyer.", "reserved");
   }
-  const now = new Date();
-  const [updatedOffer] = await db()
-    .update(schema.offers)
-    .set({ status: "accepted", respondedAt: now })
-    .where(and(eq(schema.offers.id, offer.id), eq(schema.offers.status, "pending")))
-    .returning();
-  if (!updatedOffer) throw conflict("This offer was already answered.", "offer_closed");
-  const [updatedListing] = await db()
-    .update(schema.listings)
-    .set({ status: "reserved", reservedForId: offer.buyerId, updatedAt: now })
-    .where(and(eq(schema.listings.id, listing.id), inArray(schema.listings.status, ["active", "reserved"])))
-    .returning();
   await touchThread(offer.threadId);
-  return { offer: updatedOffer, listing: updatedListing ?? listing };
+  return { offer: updatedOffer, listing };
 }
 
 export async function declineOffer(offer: Offer, actor: User) {
@@ -162,6 +181,7 @@ export async function declineOffer(offer: Offer, actor: User) {
 
 export async function counterOffer(offer: Offer, actor: User, amount: number) {
   assertRecipient(offer, actor);
+  await assertNotBlocked(offer.buyerId, offer.sellerId);
   const [listing] = await db().select().from(schema.listings).where(eq(schema.listings.id, offer.listingId)).limit(1);
   if (!listing) throw notFound("This listing is no longer available.");
   assertNegotiable(listing, amount);

@@ -30,6 +30,10 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Enter your password.").max(128),
 });
 
+export const deleteAccountSchema = z.object({
+  password: z.string().min(1, "Enter your password to confirm.").max(128),
+});
+
 export const profileUpdateSchema = z.object({
   name: cleanText(60).pipe(z.string().min(2)).optional(),
   hostel: cleanText(60).nullable().optional(),

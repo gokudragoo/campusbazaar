@@ -4,10 +4,12 @@ import { requireUser } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { publicUser, usersById } from "@/lib/dto";
 import { badRequest, json, notFound, parseBody, route } from "@/lib/http";
+import { addToBlocklist } from "@/lib/nexconn";
 
 /**
- * Server-side block record. The app also adds the user to the Nexconn blocklist through the SDK,
- * which stops their direct messages; this record hides listings and wanted posts both ways.
+ * Blocking: the server record hides listings and wanted posts both ways, and the server adds the
+ * student to the blocker's Nexconn blocklist so their direct messages stop even if the app's own
+ * SDK call fails. Both writes are idempotent, so a failed request is safe to retry.
  */
 export const GET = route(async (req) => {
   const user = await requireUser(req);
@@ -23,5 +25,6 @@ export const POST = route(async (req) => {
   const target = (await usersById([userId])).get(userId);
   if (!target) throw notFound("This student's account no longer exists.");
   await db().insert(schema.blocks).values({ blockerId: user.id, blockedId: userId }).onConflictDoNothing();
+  await addToBlocklist(user.nexconnUserId, [target.nexconnUserId]);
   return json({ blocked: true, user: publicUser(target) }, { status: 201 });
 });

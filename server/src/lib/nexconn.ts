@@ -40,33 +40,47 @@ function signedHeaders(): Record<string, string> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function call<T>(path: string, body: Record<string, unknown>): Promise<T | undefined> {
+/** Status codes the Platform Chat API documents as transient (HTTP or JSON `code`). */
+const TRANSIENT = new Set([429, 500, 502, 503, 504]);
+const ATTEMPTS = 4;
+
+/**
+ * Calls the Platform Chat API, retrying only transient failures (with the backup host for the
+ * later attempts). Business errors throw immediately. Requests that aren't idempotent, such as
+ * message sends, are retried only on 429 so a timeout can never deliver a message twice.
+ */
+async function call<T>(path: string, body: Record<string, unknown>, opts: { idempotent?: boolean } = {}): Promise<T | undefined> {
+  const idempotent = opts.idempotent ?? true;
   const hosts = [env.nexconnApiBase(), env.nexconnApiBackup()];
   let lastError: unknown;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+    if (attempt > 0) await sleep(250 * 2 ** (attempt - 1));
     const host = hosts[attempt < 2 ? 0 : 1]!;
+    let res: Response;
     try {
-      const res = await fetch(`${host}${path}`, {
+      res = await fetch(`${host}${path}`, {
         method: "POST",
         headers: signedHeaders(),
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(8000),
       });
-      if (res.status === 429 || res.status >= 500) {
-        lastError = new NexconnError(path, res.status, `HTTP ${res.status}`);
-        await sleep(250 * 2 ** attempt);
-        continue;
-      }
-      const data = (await res.json()) as NexconnResponse<T>;
-      if (data.code !== 0 && data.code !== 200) {
-        throw new NexconnError(path, data.code, data.msg ?? data.errorMessage ?? "request rejected");
-      }
-      return data.result;
     } catch (err) {
-      if (err instanceof NexconnError && typeof err.code === "number" && err.code !== 429 && err.code < 500) throw err;
+      // Network error or timeout: the request may or may not have been processed.
       lastError = err;
-      await sleep(250 * 2 ** attempt);
+      if (!idempotent) break;
+      continue;
     }
+    if (TRANSIENT.has(res.status)) {
+      lastError = new NexconnError(path, res.status, `HTTP ${res.status}`);
+      if (!idempotent && res.status !== 429) break;
+      continue;
+    }
+    const data = (await res.json().catch(() => null)) as NexconnResponse<T> | null;
+    if (!data) throw new NexconnError(path, res.status, `unreadable response (HTTP ${res.status})`);
+    if (data.code === 0 || data.code === 200) return data.result;
+    const error = new NexconnError(path, data.code, data.msg ?? data.errorMessage ?? "request rejected");
+    if (!TRANSIENT.has(data.code) || (!idempotent && data.code !== 429)) throw error;
+    lastError = error;
   }
   throw lastError instanceof Error ? lastError : new Error(`Nexconn ${path} failed`);
 }
@@ -86,6 +100,11 @@ export async function issueAccessToken(userId: string, name: string, avatarUrl?:
 
 export async function updateUserInfo(userId: string, name: string, avatarUrl?: string | null): Promise<void> {
   await call("/v4/user/update", { userId, name: trimName(name), ...(avatarUrl ? { avatarUrl } : {}) });
+}
+
+/** Invalidates every access token issued to the users so far (used when an account is deleted). */
+export async function expireAccessTokens(userIds: string[]): Promise<void> {
+  await call("/v4/auth/access-token/expire", { userIds, expiresAt: Date.now() });
 }
 
 /* ---------------------------------------------------------------- community channels --- */
@@ -134,7 +153,7 @@ export async function sendCommunityMessage(
     messageType,
     content: JSON.stringify(content),
     shouldPersist: 1,
-  });
+  }, { idempotent: false });
 }
 
 /* ------------------------------------------------------------------------- messaging --- */
@@ -176,7 +195,7 @@ export async function sendSystemNotice(toUserIds: string[], notice: NoticeConten
     content: JSON.stringify(notice),
     pushContent: notice.title,
     shouldPersist: 1,
-  });
+  }, { idempotent: false });
 }
 
 /** Sends a direct-channel message on behalf of `fromUserId` (used for server-authored deal events). */
@@ -196,7 +215,7 @@ export async function sendDirectMessage(params: {
     ...(params.pushContent ? { pushContent: params.pushContent } : {}),
     isEchoToSender: 1,
     ...(params.metadata ? { hasMetadata: true, metadata: params.metadata } : {}),
-  });
+  }, { idempotent: false });
   return result?.messageIds?.[0]?.messageId ?? null;
 }
 
@@ -219,4 +238,8 @@ export async function setDirectMessageMetadata(params: {
 
 export async function addToBlocklist(userId: string, blockedUserIds: string[]): Promise<void> {
   await call("/v4/user/blocklist/add", { userId, targetUserIds: blockedUserIds });
+}
+
+export async function removeFromBlocklist(userId: string, blockedUserIds: string[]): Promise<void> {
+  await call("/v4/user/blocklist/remove", { userId, blockedUserIds });
 }

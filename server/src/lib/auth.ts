@@ -50,7 +50,7 @@ export async function requireUser(req: Request): Promise<User> {
   const userId = await verifySession(match[1].trim());
   if (!userId) throw unauthorized("Your session has expired. Sign in again.");
   const [user] = await db().select().from(schema.users).where(eq(schema.users.id, userId)).limit(1);
-  if (!user) throw unauthorized("Your account no longer exists.");
+  if (!user || user.deletedAt) throw unauthorized("Your account no longer exists.");
   return user;
 }
 

@@ -63,6 +63,8 @@ export const users = pgTable(
     avatarUrl: text("avatar_url"),
     hostel: text("hostel"),
     department: text("department"),
+    /** Set when the student deletes their account; the row stays, anonymised, for counterparties' history. */
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("users_email_idx").on(t.email), uniqueIndex("users_nexconn_idx").on(t.nexconnUserId), index("users_campus_idx").on(t.campusId)],

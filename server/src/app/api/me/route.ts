@@ -1,10 +1,13 @@
 import { eq } from "drizzle-orm";
-import { requireUser } from "@/lib/auth";
+import { deleteAccount } from "@/lib/account";
+import { requireUser, verifyPassword } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { campusDto, selfUser, userStats } from "@/lib/dto";
-import { json, parseBody, route } from "@/lib/http";
+import { ApiError, json, parseBody, route } from "@/lib/http";
 import { updateUserInfo } from "@/lib/nexconn";
-import { profileUpdateSchema } from "@/lib/validation";
+import { rateLimit } from "@/lib/rate-limit";
+import { assertOwnUploads } from "@/lib/uploads";
+import { deleteAccountSchema, profileUpdateSchema } from "@/lib/validation";
 
 export const GET = route(async (req) => {
   const user = await requireUser(req);
@@ -22,6 +25,7 @@ export const PATCH = route(async (req) => {
   if (body.name !== undefined) patch.name = body.name;
   if (body.hostel !== undefined) patch.hostel = body.hostel || null;
   if (body.department !== undefined) patch.department = body.department || null;
+  if (body.avatarUrl) assertOwnUploads([body.avatarUrl], user.id, "avatars");
   if (body.avatarUrl !== undefined) patch.avatarUrl = body.avatarUrl;
   if (Object.keys(patch).length === 0) return json({ user: selfUser(user) });
   const [updated] = await db().update(schema.users).set(patch).where(eq(schema.users.id, user.id)).returning();
@@ -32,4 +36,16 @@ export const PATCH = route(async (req) => {
     );
   }
   return json({ user: selfUser(updated ?? user) });
+});
+
+/** Deletes the signed-in student's account after they re-enter their password. */
+export const DELETE = route(async (req) => {
+  const user = await requireUser(req);
+  await rateLimit(, 10, 900, "Too many attempts. Wait 15 minutes and try again.");
+  const { password } = await parseBody(req, deleteAccountSchema);
+  if (!(await verifyPassword(password, user.passwordHash))) {
+    throw new ApiError(401, "invalid_password", "That password is incorrect.");
+  }
+  await deleteAccount(user);
+  return json({ deleted: true });
 });

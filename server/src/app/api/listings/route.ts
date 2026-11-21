@@ -5,6 +5,7 @@ import { blockedUserIds, listingDto, usersById } from "@/lib/dto";
 import { json, parseBody, parseQuery, route } from "@/lib/http";
 import { randomId } from "@/lib/ids";
 import { rateLimit } from "@/lib/rate-limit";
+import { assertOwnUploads } from "@/lib/uploads";
 import { listingCreateSchema, listingQuerySchema } from "@/lib/validation";
 
 /** Campus feed with search, category, condition and price filters. Offset cursor. */
@@ -77,6 +78,7 @@ export const POST = route(async (req) => {
   const user = await requireCampusUser(req);
   await rateLimit(`listing-create:${user.id}`, 30, 86400, "You've posted a lot of items today. Try again tomorrow.");
   const body = await parseBody(req, listingCreateSchema);
+  assertOwnUploads(body.photos, user.id, "listings");
   const [listing] = await db()
     .insert(schema.listings)
     .values({

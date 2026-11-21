@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { requireUser } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
-import { touchThread } from "@/lib/deals";
+import { assertNotBlocked, touchThread } from "@/lib/deals";
 import { meetupDto } from "@/lib/dto";
 import { conflict, forbidden, json, notFound, parseBody, route, type RouteParams } from "@/lib/http";
 import { attachMessageSchema } from "@/lib/validation";
@@ -35,6 +35,7 @@ export const POST = route(async (req, { params }: RouteParams<{ id: string; acti
     case "confirm":
     case "decline":
       if (meetup.proposedById === user.id) throw forbidden("The other student needs to answer this proposal.");
+      if (action === "confirm") await assertNotBlocked(meetup.buyerId, meetup.sellerId);
       return transition(action === "confirm" ? "confirmed" : "declined");
     case "cancel":
       if (meetup.proposedById !== user.id) throw forbidden("Only the proposer can cancel this proposal.");
