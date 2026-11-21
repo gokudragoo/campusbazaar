@@ -7,8 +7,9 @@ is scoped to the student's campus.
 
 Two deliverables live in this repo:
 
-- `server/`: Next.js 16 (App Router route handlers only, TypeScript strict) deployed to Vercel
-  project `campusbazaar-api`. Neon Postgres via Drizzle, Vercel Blob for photos, Gemini vision
+- `server/`: Next.js 16 (App Router, TypeScript strict) deployed to Vercel project
+  `campusbazaar-api`: the JSON API (route handlers) and the public website (landing, download,
+  safety, privacy, terms, account deletion). Neon Postgres via Drizzle, Vercel Blob for photos, Gemini vision
   for listing drafts, Nexconn Platform Chat API for tokens, community channels, system notices
   and message metadata.
 - `android/`: native Kotlin + Jetpack Compose app on the Nexconn Android Chat SDK
@@ -90,12 +91,16 @@ Neon Postgres           Vercel Blob (photos)
 ```
 server/
   src/app/api/...        route handlers (one folder per resource)
+  src/app/page.tsx       website landing page; download/, safety/, privacy/, terms/, delete-account/ pages
+  src/components/site/   website components (HaggleDemo, DealFlow, brand mark, header/footer)
+  src/lib/account.ts     account deletion (anonymise, take down listings, expire Nexconn tokens)
+  src/lib/uploads.ts     own-upload checks for photo and avatar URLs
   src/lib/db/schema.ts   Drizzle schema (source of truth); migrations in server/drizzle/
   src/lib/nexconn.ts     signed Platform Chat API client
   src/lib/gemini.ts      vision listing drafts with retries + fallback model
   src/lib/auth.ts        bcrypt + JWT sessions, requireUser()
   src/lib/validation.ts  zod schemas for every input
-  scripts/               migrate.ts, e2e.mjs (production smoke test)
+  scripts/               migrate.ts, e2e.mjs (production smoke test), build-brand.mjs (logo -> all icons)
   tests/                 vitest unit tests
 android/app/src/main/java/app/campusbazaar/
   CampusBazaarApp.kt, MainActivity.kt, AppContainer.kt   app entry, manual DI, in-app notifications
@@ -123,7 +128,8 @@ See `server/src/lib/db/schema.ts`.
 
 Server: `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `BLOB_READ_WRITE_TOKEN`, `NEXCONN_APP_KEY`,
 `NEXCONN_APP_SECRET`, `NEXCONN_API_BASE`, `NEXCONN_ID_PREFIX`, `JWT_SECRET`, `GEMINI_API_KEY`,
-`GEMINI_MODEL`, `GEMINI_FALLBACK_MODEL`, `APK_DOWNLOAD_URL`.
+`GEMINI_MODEL`, `GEMINI_FALLBACK_MODEL`, `APK_DOWNLOAD_URL`, `SITE_URL` (optional; defaults to the
+Vercel production domain).
 Android: `API_BASE_URL` build config field (no secrets in the APK; the Nexconn App Key comes
 from `/api/config`).
 
@@ -152,6 +158,10 @@ cd android
 - Every route goes through `route()` (consistent JSON errors) and `requireUser()`; campus-scoped
   routes use `requireCampusUser()`. Inputs are validated with zod.
 - Money is whole rupees (integer).
+- Campus community channel ids come from `campusChannelId(normKey)` (HMAC, stable); provisioning goes
+  through `ensureCampusCommunity`, which self-heals because joining a missing channel "succeeds".
+- A wrong password on an authenticated route returns 403, never 401: the app signs out on any 401.
+- Website pages are static; keep motion purposeful and honour `prefers-reduced-motion`.
 - Commits end with the Co-Authored-By line; work lands through PRs (squash merge).
 
 ## Nexconn features and where they live
@@ -161,13 +171,14 @@ AreaCode.SG, single connect with token refresh, direct channels, five custom mes
 message metadata for offer/meetup state, image messages, location messages (with server relay
 fallback), read receipts, typing indicators, unread counts, conversation list, history
 pagination, community channel + subchannels (created/joined via Platform Chat API, used via SDK),
-system-channel notices from a bot, user blocklist, server-side direct messages and metadata.
+system-channel notices from a bot, user blocklist (SDK and server), server-side direct messages and
+metadata, access-token expiry on account deletion.
 
 ## Testing
 
-- Server unit tests: `cd server && npm test` (14, vitest).
+- Server unit tests: `cd server && npm test` (17, vitest).
 - Server e2e against production: `node scripts/e2e.mjs https://campusbazaar-api.vercel.app <photo>`
-  (48 checks incl. a real Gemini vision draft; cleans up its test data).
+  (56 checks incl. a real Gemini vision draft and account deletion; cleans up its test data).
 - Android unit tests: `cd android && ./gradlew testDebugUnitTest` (17 JVM tests).
 - Emulator run (release APK, production): seller on device, buyer via `second-student.mjs`, then a
   second login as the buyer on the device. Screenshots in docs/screenshots.
@@ -176,6 +187,8 @@ system-channel notices from a bot, user blocklist, server-side direct messages a
 
 - No FCM push (shared console). In-app banners + local notifications while the process is alive,
   and the Activity inbox (system channel).
+- `ConnectParams.timeout > 0` makes the SDK stop reconnecting; the app uses 0 and reconnects when the
+  network returns after a failure.
 - Client-side location sends fail on this App Key with undocumented error 31610; the app falls back
   to `POST /api/chats/location`, which sends the same RC:LBSMsg via the Platform Chat API.
 - SDK gotcha: `CommunitySubChannel(subChannelId, channelId)` takes the subchannel id first, unlike
