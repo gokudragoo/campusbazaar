@@ -1,0 +1,45 @@
+# Secrets and local env
+.env
+.env.*
+!.env.example
+**/.env*.local
+.vercel
+**/.vercel
+
+# Node / Next.js
+node_modules/
+**/node_modules/
+server/.next/
+server/out/
+server/coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Android / Gradle
+android/.gradle/
+android/build/
+android/app/build/
+android/**/build/
+android/local.properties
+android/.idea/
+android/captures/
+android/.kotlin/
+*.iml
+.cxx/
+.externalNativeBuild/
+
+# Signing material (never commit)
+*.jks
+*.keystore
+android/keystore.properties
+
+# Build artifacts
+*.apk
+*.aab
+!docs/**/*.png
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+*.log

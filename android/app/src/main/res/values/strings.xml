@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CampusBazaar</string>
+    <string name="notification_channel_messages">Messages and offers</string>
+    <string name="notification_channel_messages_desc">New chat messages, offers and meetup updates while CampusBazaar is running</string>
+    <string name="notification_channel_activity">Deal updates</string>
+    <string name="notification_channel_activity_desc">Reservations, sales, ratings and wanted-post responses</string>
+</resources>

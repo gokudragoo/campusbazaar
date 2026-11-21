@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Session tokens are encrypted with a device-bound Keystore key; never back them up. -->
+    <exclude domain="file" path="datastore/session.preferences_pb" />
+    <exclude domain="database" path="." />
+</full-backup-content>

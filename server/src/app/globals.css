@@ -1,0 +1,8 @@
+:root {
+  --paper: #f2f3f5;
+  --ink: #16213e;
+  --marigold: #f5b800;
+  --stamp: #c62e2e;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
