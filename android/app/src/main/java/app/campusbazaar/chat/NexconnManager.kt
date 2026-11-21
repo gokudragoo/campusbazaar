@@ -268,7 +268,10 @@ class NexconnManager(private val context: Context) {
 
     /* ------------------------------------------------------------- history & lists --- */
 
-    suspend fun loadNextPage(query: MessagesQuery): Result<List<Message>> = suspendCancellableCoroutine { cont ->
+    /** The SDK throws (rather than reporting an error) when used before initialize(). */
+    private fun <T> notReady(): Result<T>? = if (initializedKey == null) Result.failure(ChatException(33001, "Chat isn't ready yet")) else null
+
+    suspend fun loadNextPage(query: MessagesQuery): Result<List<Message>> = notReady() ?: suspendCancellableCoroutine { cont ->
         query.loadNextPage { page, error ->
             if (!cont.isActive) return@loadNextPage
             if (error == null) cont.resume(Result.success(page?.data.orEmpty()))
@@ -278,7 +281,7 @@ class NexconnManager(private val context: Context) {
 
     suspend fun directChannels(): Result<List<BaseChannel>> = channels(listOf(ChannelType.DIRECT))
 
-    suspend fun channels(types: List<ChannelType>, pageSize: Int = 50): Result<List<BaseChannel>> = suspendCancellableCoroutine { cont ->
+    suspend fun channels(types: List<ChannelType>, pageSize: Int = 50): Result<List<BaseChannel>> = notReady() ?: suspendCancellableCoroutine { cont ->
         val query = BaseChannel.createChannelsQuery(ChannelsQueryParams(types).apply { this.pageSize = pageSize; topPriority = true })
         query.loadNextPage { page, error ->
             if (!cont.isActive) return@loadNextPage

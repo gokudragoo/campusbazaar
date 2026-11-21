@@ -52,6 +52,9 @@ class SessionManager(
         val session = store.load()
         apply(session)
         if (session == null) return
+        // Initialise right away: screens read the SDK's local store (unread badges, history) as soon
+        // as the session is applied. Connecting waits for the App Key check below.
+        nexconn.ensureInitialized(session.nexconnAppKey)
         // Refresh profile/campus in the background; a 401 here signs the user out.
         scope.launch {
             apiCall { api().me() }.onSuccess { me -> update { it.copy(user = me.user, campus = me.campus) } }
@@ -75,6 +78,7 @@ class SessionManager(
             nexconnToken = response.nexconn.token,
         )
         store.save(session)
+        nexconn.ensureInitialized(session.nexconnAppKey) // before screens that read the SDK appear
         apply(session)
         startChat(session)
     }

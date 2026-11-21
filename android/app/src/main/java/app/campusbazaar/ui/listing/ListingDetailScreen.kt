@@ -222,7 +222,12 @@ fun ListingDetailScreen(id: String, nav: NavHostController) {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "More options") }
                     DropdownMenu(menu, onDismissRequest = { menu = false }, containerColor = CB.Surface) {
                         if (mine) {
-                            DropdownMenuItem(text = { Text("Delete listing", color = CB.Stamp) }, onClick = { menu = false; confirmDelete = true })
+                            // Sold items stay as the record behind ratings and the items-sold count.
+                            if (ListingStatus.of(listing.status) == ListingStatus.Sold) {
+                                DropdownMenuItem(text = { Text("Sold items stay on your profile", color = CB.InkFaint) }, onClick = {}, enabled = false)
+                            } else {
+                                DropdownMenuItem(text = { Text("Delete listing", color = CB.Stamp) }, onClick = { menu = false; confirmDelete = true })
+                            }
                         } else {
                             DropdownMenuItem(text = { Text("Hide from my feed") }, onClick = { menu = false; vm.hide() })
                             DropdownMenuItem(text = { Text("Report listing") }, onClick = { menu = false; reporting = true })
